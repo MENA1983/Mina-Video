@@ -45,10 +45,8 @@ jobs:
           raw=json.dumps(json.loads(os.environ['MANIFEST_JSON']),separators=(',',':'),ensure_ascii=False).encode()
           actual=hashlib.sha256(raw).hexdigest()
           expected=os.environ['EXPECTED_SHA256'].strip().lower()
-          if actual != expected:
-              raise SystemExit(f'manifest sha256 mismatch: {actual}')
-          if len(raw)>5*1024*1024:
-              raise SystemExit('manifest too large')
+          if actual != expected: raise SystemExit(f'manifest sha256 mismatch: {actual}')
+          if len(raw)>5*1024*1024: raise SystemExit('manifest too large')
           open('manifest.json','wb').write(raw)
           PY
 
@@ -61,20 +59,39 @@ jobs:
           python - <<'PY'
           import hashlib, os, urllib.parse, urllib.request
           u=urllib.parse.urlparse(os.environ['MANIFEST_URL'])
-          if u.scheme!='https' or not u.netloc or u.fragment:
-              raise SystemExit('manifest_url must be HTTPS without fragment')
+          if u.scheme!='https' or not u.netloc or u.fragment: raise SystemExit('manifest_url must be HTTPS without fragment')
           req=urllib.request.Request(os.environ['MANIFEST_URL'],headers={'User-Agent':'mina-video-runner/1'})
-          with urllib.request.urlopen(req,timeout=30) as r:
-              data=r.read(5*1024*1024+1)
+          with urllib.request.urlopen(req,timeout=30) as r: data=r.read(5*1024*1024+1)
           if len(data)>5*1024*1024: raise SystemExit('manifest too large')
           actual=hashlib.sha256(data).hexdigest()
-          if actual != os.environ['EXPECTED_SHA256'].strip().lower():
-              raise SystemExit(f'sha256 mismatch: {actual}')
+          if actual != os.environ['EXPECTED_SHA256'].strip().lower(): raise SystemExit(f'sha256 mismatch: {actual}')
           open('manifest.json','wb').write(data)
           PY
 
-      - name: Validate manifest file exists
-        run: test -s manifest.json
+      - name: Validate manifest and derive idempotency tag
+        run: |
+          python - <<'PY'
+          import hashlib,json,re
+          m=json.load(open('manifest.json',encoding='utf-8'))
+          if m.get('schema')!='external-video/v1': raise SystemExit('unsupported manifest schema')
+          job=str(m.get('job_id','')).strip()
+          if not re.fullmatch(r'[A-Za-z0-9._-]{1,80}',job): raise SystemExit('job_id is not safe for a release tag')
+          raw=open('manifest.json','rb').read()
+          digest=hashlib.sha256(raw).hexdigest()
+          open('render-tag.env','w').write(f'RENDER_TAG=mina-video-{job}\nMANIFEST_SHA256={digest}\n')
+          PY
+          test -s manifest.json
+
+      - name: Check existing render before spending render time
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          . ./render-tag.env
+          if gh release view "$RENDER_TAG" >/tmp/existing-release.json 2>/dev/null; then
+            echo "Existing render found; refusing duplicate render."
+            gh release view "$RENDER_TAG" --json url --jq .url
+            exit 0
+          fi
 
       - name: Render MP4
         run: python video-runner/render.py --manifest manifest.json --output output.mp4 | tee render-result.json
@@ -83,16 +100,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python - <<'PY'
-          import json,re
-          m=json.load(open('manifest.json',encoding='utf-8'))
-          job=str(m.get('job_id','')).strip()
-          if not re.fullmatch(r'[A-Za-z0-9._-]{1,80}',job):
-              raise SystemExit('job_id is not safe for a release tag')
-          print(f'RENDER_TAG=mina-video-{job}')
-          open('render-tag.env','w').write(f'RENDER_TAG=mina-video-{job}\n')
-          PY
           . ./render-tag.env
-          gh release delete "$RENDER_TAG" --yes || true
+          if gh release view "$RENDER_TAG" >/dev/null 2>&1; then
+            echo "Another worker published this job first; no duplicate publication."
+            gh release view "$RENDER_TAG" --json url --jq .url
+            exit 0
+          fi
           gh release create "$RENDER_TAG" output.mp4 --title "Mina Video $RENDER_TAG" --notes-file render-result.json
           gh release view "$RENDER_TAG" --json url --jq .url
