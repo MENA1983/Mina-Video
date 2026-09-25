@@ -1,0 +1,63 @@
+name: Mina Video Renderer
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest_url:
+        description: HTTPS URL to an external-video/v1 JSON manifest
+        required: true
+        type: string
+      manifest_sha256:
+        description: Expected SHA-256 of manifest bytes
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mina-video-${{ inputs.manifest_sha256 }}
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install renderer dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg espeak-ng
+
+      - name: Download and verify manifest
+        env:
+          MANIFEST_URL: ${{ inputs.manifest_url }}
+          EXPECTED_SHA256: ${{ inputs.manifest_sha256 }}
+        run: |
+          python - <<'PY'
+          import hashlib, os, urllib.parse, urllib.request
+          u=urllib.parse.urlparse(os.environ['MANIFEST_URL'])
+          if u.scheme!='https' or not u.netloc or u.fragment:
+              raise SystemExit('manifest_url must be HTTPS without fragment')
+          req=urllib.request.Request(os.environ['MANIFEST_URL'],headers={'User-Agent':'mina-video-runner/1'})
+          with urllib.request.urlopen(req,timeout=30) as r:
+              data=r.read(5*1024*1024+1)
+          if len(data)>5*1024*1024: raise SystemExit('manifest too large')
+          actual=hashlib.sha256(data).hexdigest()
+          if actual != os.environ['EXPECTED_SHA256'].strip().lower():
+              raise SystemExit(f'sha256 mismatch: {actual}')
+          open('manifest.json','wb').write(data)
+          PY
+
+      - name: Render MP4
+        run: python video-runner/render.py --manifest manifest.json --output output.mp4 | tee render-result.json
+
+      - name: Publish render artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="video-${{ github.run_id }}"
+          gh release create "$TAG" output.mp4 --title "Mina Video render ${{ github.run_id }}" --notes-file render-result.json
