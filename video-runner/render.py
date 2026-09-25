@@ -6,9 +6,11 @@ from pathlib import Path
 MAX_MANIFEST_BYTES=5*1024*1024
 MAX_IMAGES=40
 MAX_IMAGE_BYTES=20*1024*1024
+MAX_TOTAL_IMAGE_BYTES=300*1024*1024
 MAX_AUDIO_BYTES=50*1024*1024
 MAX_SCENES=20
 MAX_VIDEO_SECONDS=180
+MAX_REDIRECTS=5
 
 class RenderError(RuntimeError): pass
 
@@ -25,22 +27,42 @@ def require_tools():
 
 def https_url(value,label):
     url=str(value or '').strip(); p=urllib.parse.urlparse(url)
-    if p.scheme!='https' or not p.netloc or p.fragment: fail(f'{label} must be an HTTPS URL without a fragment')
+    if p.scheme!='https' or not p.netloc or p.fragment or p.username or p.password:
+        fail(f'{label} must be an HTTPS URL without fragments or embedded credentials')
     return url
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def download(url,target,max_bytes):
-    req=urllib.request.Request(url,headers={'User-Agent':'mina-video-runner/1'})
-    with urllib.request.urlopen(req,timeout=30) as response:
-        length=response.headers.get('Content-Length')
-        if length and int(length)>max_bytes: fail(f'asset exceeds size limit: {url}')
-        total=0
-        with target.open('wb') as out:
-            while True:
-                chunk=response.read(1024*1024)
-                if not chunk: break
-                total+=len(chunk)
-                if total>max_bytes: fail(f'asset exceeds size limit: {url}')
-                out.write(chunk)
+    current=https_url(url,'asset URL')
+    opener=urllib.request.build_opener(_NoRedirect)
+    for _ in range(MAX_REDIRECTS + 1):
+        req=urllib.request.Request(current,headers={'User-Agent':'mina-video-runner/1'})
+        try:
+            response=opener.open(req,timeout=30)
+        except urllib.error.HTTPError as exc:
+            if exc.code in {301,302,303,307,308}:
+                location=exc.headers.get('Location')
+                if not location: fail(f'redirect without Location: {current}')
+                current=https_url(urllib.parse.urljoin(current,location),'redirect URL')
+                continue
+            raise
+        with response:
+            length=response.headers.get('Content-Length')
+            if length and int(length)>max_bytes: fail(f'asset exceeds size limit: {current}')
+            total=0
+            with target.open('wb') as out:
+                while True:
+                    chunk=response.read(1024*1024)
+                    if not chunk: break
+                    total+=len(chunk)
+                    if total>max_bytes: fail(f'asset exceeds size limit: {current}')
+                    out.write(chunk)
+            return total
+    fail(f'too many redirects: {url}')
 
 def sha256(path):
     d=hashlib.sha256()
@@ -61,10 +83,10 @@ def render_scene(root,scene,index,voice):
     if not isinstance(images,list) or not images: fail(f'scene {index}: at least one image is required')
     if len(images)>6: fail(f'scene {index}: maximum 6 images')
     scene_dir=root/f'scene-{index}'; scene_dir.mkdir()
-    image_paths=[]
+    image_paths=[]; scene_image_bytes=0
     for n,item in enumerate(images,1):
         path=scene_dir/f'image-{n}.bin'
-        download(https_url(item,f'scene {index} image {n}'),path,MAX_IMAGE_BYTES)
+        scene_image_bytes += download(https_url(item,f'scene {index} image {n}'),path,MAX_IMAGE_BYTES)
         image_paths.append(path)
     audio=scene_dir/'audio.wav'
     audio_url=str(scene.get('audio_url','')).strip()
@@ -91,7 +113,7 @@ def render_scene(root,scene,index,voice):
     font='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
     vf=f"drawtext=fontfile={font}:textfile='{caption.as_posix()}':fontcolor=white:fontsize=52:line_spacing=12:x=(w-text_w)/2:y=h-430:box=1:boxcolor=black@0.58:boxborderw=28"
     run(['ffmpeg','-y','-i',str(silent),'-i',str(audio),'-vf',vf,'-map','0:v:0','-map','1:a:0','-t',f'{dur:.3f}','-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-b:a','128k','-af','loudnorm=I=-16:LRA=11:TP=-1.5','-shortest','-movflags','+faststart',str(final_scene)])
-    return final_scene
+    return final_scene, scene_image_bytes
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--manifest',required=True); ap.add_argument('--output',required=True); args=ap.parse_args()
@@ -105,8 +127,14 @@ def main():
     total_images=sum(len(s.get('images',[])) for s in scenes if isinstance(s,dict) and isinstance(s.get('images'),list))
     if total_images>MAX_IMAGES: fail('manifest image limit exceeded')
     voice=str(manifest.get('voice','en')).lower()
+    total_image_bytes=0
     with tempfile.TemporaryDirectory(prefix='mina-video-') as temp:
-        root=Path(temp); clips=[render_scene(root,s,i,voice) for i,s in enumerate(scenes,1)]
+        root=Path(temp); clips=[]
+        for i,s in enumerate(scenes,1):
+            clip, image_bytes=render_scene(root,s,i,voice)
+            total_image_bytes += image_bytes
+            if total_image_bytes>MAX_TOTAL_IMAGE_BYTES: fail('total image download limit exceeded')
+            clips.append(clip)
         concat=root/'scenes.txt'; concat.write_text(''.join(f"file '{p.as_posix()}'\n" for p in clips),encoding='utf-8')
         output=Path(args.output); output.parent.mkdir(parents=True,exist_ok=True)
         run(['ffmpeg','-y','-f','concat','-safe','0','-i',str(concat),'-c','copy','-movflags','+faststart',str(output)])
