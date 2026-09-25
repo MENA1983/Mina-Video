@@ -83,20 +83,25 @@ jobs:
           test -s manifest.json
 
       - name: Check existing render before spending render time
+        id: duplicate_guard
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           . ./render-tag.env
           if gh release view "$RENDER_TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Existing render found; refusing duplicate render."
             gh release view "$RENDER_TAG" --json url --jq .url
-            exit 0
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Render MP4
+        if: steps.duplicate_guard.outputs.exists != 'true'
         run: python video-runner/render.py --manifest manifest.json --output output.mp4 | tee render-result.json
 
       - name: Publish deterministic render artifact
+        if: steps.duplicate_guard.outputs.exists != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
