@@ -1,0 +1,13 @@
+{
+  "schema": "mina-video-dispatch/v1",
+  "event_type": "render-video",
+  "client_payload": {
+    "manifest": "external-video/v1 object",
+    "manifest_sha256": "sha256 hex"
+  },
+  "result": {
+    "tag": "mina-video-<job_id>",
+    "asset": "GitHub Release asset output.mp4",
+    "status": "RENDERED"
+  }
+}
