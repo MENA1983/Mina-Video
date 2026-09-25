@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class PublicContractTests(unittest.TestCase):
     def test_dispatch_contract_is_valid_and_bounded(self):
         data = json.loads((ROOT / "video-runner" / "dispatch-contract.json").read_text())
-        self.assertEqual(data.get("schema"), "external-video/v1")
+        self.assertEqual(data.get("schema"), "mina-video-dispatch/v1")
         self.assertIn("job_id", data.get("required", []))
         self.assertIn("manifest_sha256", data.get("required", []))
 
