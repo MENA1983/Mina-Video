@@ -42,7 +42,7 @@ jobs:
         run: |
           python - <<'PY'
           import hashlib, json, os
-          raw=json.dumps(json.loads(os.environ['MANIFEST_JSON']),separators=(',',':'),ensure_ascii=False).encode()
+          raw=json.dumps(json.loads(os.environ['MANIFEST_JSON']),separators=(',',':'),ensure_ascii=False,sort_keys=True).encode()
           actual=hashlib.sha256(raw).hexdigest()
           expected=os.environ['EXPECTED_SHA256'].strip().lower()
           if actual != expected: raise SystemExit(f'manifest sha256 mismatch: {actual}')
@@ -87,7 +87,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           . ./render-tag.env
-          if gh release view "$RENDER_TAG" >/tmp/existing-release.json 2>/dev/null; then
+          if gh release view "$RENDER_TAG" >/dev/null 2>&1; then
             echo "Existing render found; refusing duplicate render."
             gh release view "$RENDER_TAG" --json url --jq .url
             exit 0
