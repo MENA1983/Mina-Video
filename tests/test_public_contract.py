@@ -9,8 +9,10 @@ class PublicContractTests(unittest.TestCase):
     def test_dispatch_contract_is_valid_and_bounded(self):
         data = json.loads((ROOT / "video-runner" / "dispatch-contract.json").read_text())
         self.assertEqual(data.get("schema"), "mina-video-dispatch/v1")
-        self.assertIn("job_id", data.get("required", []))
-        self.assertIn("manifest_sha256", data.get("required", []))
+        payload = data.get("client_payload", {})
+        self.assertIn("manifest", payload)
+        self.assertIn("manifest_sha256", payload)
+        self.assertEqual(data.get("event_type"), "render-video")
 
     def test_renderer_has_duplicate_safe_release_tag(self):
         source = (ROOT / "video-runner" / "render.py").read_text()
