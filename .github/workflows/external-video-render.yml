@@ -5,18 +5,20 @@ on:
     inputs:
       manifest_url:
         description: HTTPS URL to an external-video/v1 JSON manifest
-        required: true
+        required: false
         type: string
       manifest_sha256:
-        description: Expected SHA-256 of manifest bytes
-        required: true
+        description: Expected SHA-256 of manifest bytes when using manifest_url
+        required: false
         type: string
+  repository_dispatch:
+    types: [render-video]
 
 permissions:
   contents: write
 
 concurrency:
-  group: mina-video-${{ inputs.manifest_sha256 }}
+  group: mina-video-${{ github.event.client_payload.manifest_sha256 || inputs.manifest_sha256 || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -32,7 +34,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg espeak-ng
 
-      - name: Download and verify manifest
+      - name: Receive manifest from factory dispatch
+        if: github.event_name == 'repository_dispatch'
+        env:
+          MANIFEST_JSON: ${{ toJSON(github.event.client_payload.manifest) }}
+          EXPECTED_SHA256: ${{ github.event.client_payload.manifest_sha256 }}
+        run: |
+          python - <<'PY'
+          import hashlib, json, os
+          raw=json.dumps(json.loads(os.environ['MANIFEST_JSON']),separators=(',',':'),ensure_ascii=False).encode()
+          actual=hashlib.sha256(raw).hexdigest()
+          expected=os.environ['EXPECTED_SHA256'].strip().lower()
+          if actual != expected:
+              raise SystemExit(f'manifest sha256 mismatch: {actual}')
+          if len(raw)>5*1024*1024:
+              raise SystemExit('manifest too large')
+          open('manifest.json','wb').write(raw)
+          PY
+
+      - name: Receive manifest from HTTPS URL
+        if: github.event_name == 'workflow_dispatch' && inputs.manifest_url != ''
         env:
           MANIFEST_URL: ${{ inputs.manifest_url }}
           EXPECTED_SHA256: ${{ inputs.manifest_sha256 }}
@@ -52,12 +73,26 @@ jobs:
           open('manifest.json','wb').write(data)
           PY
 
+      - name: Validate manifest file exists
+        run: test -s manifest.json
+
       - name: Render MP4
         run: python video-runner/render.py --manifest manifest.json --output output.mp4 | tee render-result.json
 
-      - name: Publish render artifact
+      - name: Publish deterministic render artifact
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="video-${{ github.run_id }}"
-          gh release create "$TAG" output.mp4 --title "Mina Video render ${{ github.run_id }}" --notes-file render-result.json
+          python - <<'PY'
+          import json,re
+          m=json.load(open('manifest.json',encoding='utf-8'))
+          job=str(m.get('job_id','')).strip()
+          if not re.fullmatch(r'[A-Za-z0-9._-]{1,80}',job):
+              raise SystemExit('job_id is not safe for a release tag')
+          print(f'RENDER_TAG=mina-video-{job}')
+          open('render-tag.env','w').write(f'RENDER_TAG=mina-video-{job}\n')
+          PY
+          . ./render-tag.env
+          gh release delete "$RENDER_TAG" --yes || true
+          gh release create "$RENDER_TAG" output.mp4 --title "Mina Video $RENDER_TAG" --notes-file render-result.json
+          gh release view "$RENDER_TAG" --json url --jq .url
