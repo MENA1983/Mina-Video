@@ -22,8 +22,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Production media and manifest downloads are fail-closed unless the owner
-  # explicitly configures exact approved public hosts in this repository variable.
   MINA_VIDEO_ALLOWED_HOSTS: ${{ vars.MINA_VIDEO_ALLOWED_HOSTS }}
 
 jobs:
@@ -64,18 +62,15 @@ jobs:
         run: |
           python - <<'PY'
           import hashlib, ipaddress, os, socket, urllib.parse, urllib.request
-
           raw_url=os.environ['MANIFEST_URL'].strip()
           parsed=urllib.parse.urlparse(raw_url)
           if parsed.scheme != 'https' or not parsed.hostname or parsed.fragment or parsed.username or parsed.password:
               raise SystemExit('manifest_url must be HTTPS without fragment or embedded credentials')
-
           try:
               host=parsed.hostname.rstrip('.').encode('idna').decode('ascii').lower()
               port=parsed.port or 443
           except (UnicodeError, ValueError):
               raise SystemExit('manifest_url has an invalid hostname or port')
-
           allowed=set()
           for item in os.environ.get('ALLOWED_HOSTS','').split(','):
               item=item.strip()
@@ -88,10 +83,8 @@ jobs:
                   allowed.add((h,p.port or 443))
               except (UnicodeError, ValueError):
                   raise SystemExit('invalid MINA_VIDEO_ALLOWED_HOSTS entry')
-
           if (host,port) not in allowed:
               raise SystemExit('manifest_url host is not approved by MINA_VIDEO_ALLOWED_HOSTS')
-
           try:
               infos=socket.getaddrinfo(host,port,type=socket.SOCK_STREAM)
           except socket.gaierror as exc:
@@ -103,7 +96,6 @@ jobs:
               ip=ipaddress.ip_address(address)
               if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
                   raise SystemExit(f'manifest_url resolves to non-public IP: {address}')
-
           req=urllib.request.Request(raw_url,headers={'User-Agent':'mina-video-runner/1'})
           with urllib.request.urlopen(req,timeout=30) as r:
               if r.geturl() != raw_url:
@@ -151,6 +143,27 @@ jobs:
         if: steps.duplicate_guard.outputs.exists != 'true'
         run: python video-runner/render.py --manifest manifest.json --output output.mp4 | tee render-result.json
 
+      - name: Build render provenance record
+        if: steps.duplicate_guard.outputs.exists != 'true'
+        run: |
+          . ./render-tag.env
+          python - <<'PY'
+          import hashlib, json, os
+          manifest_sha=os.environ['MANIFEST_SHA256']
+          video_sha=hashlib.sha256(open('output.mp4','rb').read()).hexdigest()
+          result={}
+          try:
+              result=json.load(open('render-result.json',encoding='utf-8'))
+          except Exception:
+              result={"renderer_result":"unparseable"}
+          with open('render-release-notes.md','w',encoding='utf-8') as f:
+              f.write('# Render provenance\n\n')
+              f.write(f'- Manifest SHA-256: `{manifest_sha}`\n')
+              f.write(f'- Video SHA-256: `{video_sha}`\n')
+              f.write(f'- Render tag: `{os.environ["RENDER_TAG"]}`\n')
+              f.write(f'- Result: `{json.dumps(result,ensure_ascii=False,sort_keys=True)}`\n')
+          PY
+
       - name: Publish deterministic render artifact
         if: steps.duplicate_guard.outputs.exists != 'true'
         env:
@@ -162,5 +175,5 @@ jobs:
             gh release view "$RENDER_TAG" --json url --jq .url
             exit 0
           fi
-          gh release create "$RENDER_TAG" output.mp4 --title "Mina Video $RENDER_TAG" --notes-file render-result.json
+          gh release create "$RENDER_TAG" output.mp4 --title "Mina Video $RENDER_TAG" --notes-file render-release-notes.md
           gh release view "$RENDER_TAG" --json url --jq .url
