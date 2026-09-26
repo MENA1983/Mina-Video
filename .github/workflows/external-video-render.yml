@@ -98,6 +98,9 @@ jobs:
 
       - name: Render MP4
         if: steps.duplicate_guard.outputs.exists != 'true'
+        env:
+          # Repository variable, intentionally not a secret. Empty means fail-closed.
+          MINA_VIDEO_ALLOWED_HOSTS: ${{ vars.MINA_VIDEO_ALLOWED_HOSTS }}
         run: python video-runner/render.py --manifest manifest.json --output output.mp4 | tee render-result.json
 
       - name: Publish deterministic render artifact
