@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, hashlib, json, os, shutil, subprocess, tempfile, urllib.parse, urllib.request
+import argparse, hashlib, ipaddress, json, os, shutil, socket, subprocess, tempfile, urllib.parse, urllib.request
 from pathlib import Path
 
 MAX_MANIFEST_BYTES=5*1024*1024
@@ -32,7 +32,6 @@ def https_url(value,label):
         fail(f'{label} must be an HTTPS URL without fragments or embedded credentials')
     try:
         if p.port not in (None,443):
-            # Non-default ports are permitted only when explicitly allowlisted.
             pass
     except ValueError:
         fail(f'{label} contains an invalid port')
@@ -56,8 +55,6 @@ def canonical_endpoint(value,label):
         host=host.rstrip('.').encode('idna').decode('ascii').lower()
     except UnicodeError:
         fail(f'{label} contains an invalid hostname')
-    if not host:
-        fail(f'{label} must contain a hostname')
     return f'{host}:{port or 443}'
 
 def canonical_url_endpoint(url,label):
@@ -75,6 +72,26 @@ def canonical_url_endpoint(url,label):
         fail(f'{label} contains an invalid hostname')
     return f'{host}:{port or 443}'
 
+def reject_private_resolution(url,label):
+    parsed=urllib.parse.urlparse(url)
+    host=parsed.hostname
+    if not host:
+        fail(f'{label} must contain a hostname')
+    try:
+        infos=socket.getaddrinfo(host, parsed.port or 443, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        fail(f'{label} DNS resolution failed: {exc}')
+    addresses={info[4][0] for info in infos}
+    if not addresses:
+        fail(f'{label} DNS returned no addresses')
+    for address in addresses:
+        try:
+            ip=ipaddress.ip_address(address)
+        except ValueError:
+            fail(f'{label} resolved to an invalid IP address')
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
+            fail(f'{label} resolves to a non-public IP address: {address}')
+
 def approved_asset_url(value,label):
     url=https_url(value,label)
     configured=os.environ.get(ALLOWED_HOSTS_ENV,'')
@@ -86,6 +103,7 @@ def approved_asset_url(value,label):
     endpoint=canonical_url_endpoint(url,label)
     if endpoint not in allowed:
         fail(f'{label} host is not approved for production: {endpoint}')
+    reject_private_resolution(url,label)
     return url
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -97,6 +115,7 @@ def download(url,target,max_bytes):
     current=approved_asset_url(url,'asset URL')
     opener=urllib.request.build_opener(_NoRedirect)
     for _ in range(MAX_REDIRECTS + 1):
+        current=approved_asset_url(current,'asset URL')
         req=urllib.request.Request(current,headers={'User-Agent':'mina-video-runner/1'})
         try:
             response=opener.open(req,timeout=30)
