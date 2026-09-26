@@ -13,7 +13,9 @@ Factory approved package
         ↓
 external-video/v1 manifest
         ↓
-HTTPS + SHA-256 verification
+approved public asset host allowlist
+        ↓
+HTTPS + redirect + size verification
         ↓
 multiple images per scene
         ↓
@@ -39,8 +41,14 @@ These limits are safety and reliability boundaries, not a promise of unlimited p
 
 Never put passwords, OAuth tokens, cookies, client secrets, private URLs, or private factory source into a manifest.
 
+Production downloads are fail-closed unless the repository variable `MINA_VIDEO_ALLOWED_HOSTS` contains the exact approved public artifact-delivery hostnames. Multiple hosts may be supplied as a comma-separated list. Hostnames are canonicalized; redirects are checked against the same allowlist, so a permitted URL cannot redirect to an unapproved host.
+
 Only HTTPS public assets that have already passed the factory's rights/policy gates should cross this boundary.
+
+## Configuration
+
+Set the GitHub repository variable `MINA_VIDEO_ALLOWED_HOSTS` to the authoritative host(s) defined by the Factory↔Mina-Video contract. Do not guess or broaden this list. An empty or malformed value intentionally prevents production rendering.
 
 ## Status
 
-The renderer and workflow have been added to the repository. **They are not execution-verified yet.** A real test run is required before calling the renderer production-ready.
+The renderer and workflow have been hardened with a fail-closed asset-host trust boundary and public regression coverage. A real Factory↔Mina-Video end-to-end render, using the owner-configured approved host, is still required before the integration can be called production-verified.
