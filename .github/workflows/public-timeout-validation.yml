@@ -1,0 +1,28 @@
+name: Public Renderer Timeout Validation
+
+on:
+  push:
+    branches: [fix/renderer-command-timeouts]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'video-runner/render.py'
+      - 'tests/test_renderer_command_timeouts.py'
+      - '.github/workflows/public-timeout-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  timeout-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Run timeout regression tests
+        run: python -m pytest -q tests/test_renderer_command_timeouts.py
