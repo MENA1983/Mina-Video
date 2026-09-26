@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, hashlib, json, shutil, subprocess, tempfile, urllib.parse, urllib.request
+import argparse, hashlib, ipaddress, json, os, shutil, socket, subprocess, tempfile, urllib.parse, urllib.request
 from pathlib import Path
 
 MAX_MANIFEST_BYTES=5*1024*1024
@@ -11,6 +11,7 @@ MAX_AUDIO_BYTES=50*1024*1024
 MAX_SCENES=20
 MAX_VIDEO_SECONDS=180
 MAX_REDIRECTS=5
+ALLOWED_HOSTS_ENV="MINA_VIDEO_ALLOWED_HOSTS"
 
 class RenderError(RuntimeError): pass
 
@@ -29,6 +30,80 @@ def https_url(value,label):
     url=str(value or '').strip(); p=urllib.parse.urlparse(url)
     if p.scheme!='https' or not p.netloc or p.fragment or p.username or p.password:
         fail(f'{label} must be an HTTPS URL without fragments or embedded credentials')
+    try:
+        if p.port not in (None,443):
+            pass
+    except ValueError:
+        fail(f'{label} contains an invalid port')
+    return url
+
+def canonical_endpoint(value,label):
+    raw=str(value or '').strip()
+    if not raw:
+        fail(f'{label} is empty')
+    parsed=urllib.parse.urlparse('https://' + raw)
+    if parsed.username or parsed.password or parsed.path not in ('','/') or parsed.query or parsed.fragment:
+        fail(f'{label} must be a hostname with an optional port')
+    try:
+        host=parsed.hostname
+        port=parsed.port
+    except ValueError:
+        fail(f'{label} contains an invalid port')
+    if not host:
+        fail(f'{label} must contain a hostname')
+    try:
+        host=host.rstrip('.').encode('idna').decode('ascii').lower()
+    except UnicodeError:
+        fail(f'{label} contains an invalid hostname')
+    return f'{host}:{port or 443}'
+
+def canonical_url_endpoint(url,label):
+    parsed=urllib.parse.urlparse(https_url(url,label))
+    try:
+        host=parsed.hostname
+        port=parsed.port
+    except ValueError:
+        fail(f'{label} contains an invalid port')
+    if not host:
+        fail(f'{label} must contain a hostname')
+    try:
+        host=host.rstrip('.').encode('idna').decode('ascii').lower()
+    except UnicodeError:
+        fail(f'{label} contains an invalid hostname')
+    return f'{host}:{port or 443}'
+
+def reject_private_resolution(url,label):
+    parsed=urllib.parse.urlparse(url)
+    host=parsed.hostname
+    if not host:
+        fail(f'{label} must contain a hostname')
+    try:
+        infos=socket.getaddrinfo(host, parsed.port or 443, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        fail(f'{label} DNS resolution failed: {exc}')
+    addresses={info[4][0] for info in infos}
+    if not addresses:
+        fail(f'{label} DNS returned no addresses')
+    for address in addresses:
+        try:
+            ip=ipaddress.ip_address(address)
+        except ValueError:
+            fail(f'{label} resolved to an invalid IP address')
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
+            fail(f'{label} resolves to a non-public IP address: {address}')
+
+def approved_asset_url(value,label):
+    url=https_url(value,label)
+    configured=os.environ.get(ALLOWED_HOSTS_ENV,'')
+    if not configured.strip():
+        fail(f'{ALLOWED_HOSTS_ENV} is not configured; production asset downloads are fail-closed')
+    allowed={canonical_endpoint(item,f'{ALLOWED_HOSTS_ENV} entry') for item in configured.split(',') if item.strip()}
+    if not allowed:
+        fail(f'{ALLOWED_HOSTS_ENV} contains no usable hosts')
+    endpoint=canonical_url_endpoint(url,label)
+    if endpoint not in allowed:
+        fail(f'{label} host is not approved for production: {endpoint}')
+    reject_private_resolution(url,label)
     return url
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -37,9 +112,10 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def download(url,target,max_bytes):
-    current=https_url(url,'asset URL')
+    current=approved_asset_url(url,'asset URL')
     opener=urllib.request.build_opener(_NoRedirect)
     for _ in range(MAX_REDIRECTS + 1):
+        current=approved_asset_url(current,'asset URL')
         req=urllib.request.Request(current,headers={'User-Agent':'mina-video-runner/1'})
         try:
             response=opener.open(req,timeout=30)
@@ -47,7 +123,7 @@ def download(url,target,max_bytes):
             if exc.code in {301,302,303,307,308}:
                 location=exc.headers.get('Location')
                 if not location: fail(f'redirect without Location: {current}')
-                current=https_url(urllib.parse.urljoin(current,location),'redirect URL')
+                current=approved_asset_url(urllib.parse.urljoin(current,location),'redirect URL')
                 continue
             raise
         with response:
@@ -86,11 +162,11 @@ def render_scene(root,scene,index,voice):
     image_paths=[]; scene_image_bytes=0
     for n,item in enumerate(images,1):
         path=scene_dir/f'image-{n}.bin'
-        scene_image_bytes += download(https_url(item,f'scene {index} image {n}'),path,MAX_IMAGE_BYTES)
+        scene_image_bytes += download(item,path,MAX_IMAGE_BYTES)
         image_paths.append(path)
     audio=scene_dir/'audio.wav'
     audio_url=str(scene.get('audio_url','')).strip()
-    if audio_url: download(https_url(audio_url,f'scene {index} audio'),audio,MAX_AUDIO_BYTES)
+    if audio_url: download(audio_url,audio,MAX_AUDIO_BYTES)
     else:
         selected_voice=voice if voice in {'en','ar'} else 'en'
         run(['espeak-ng','-v',selected_voice,'-s','145' if selected_voice=='ar' else '155','-w',str(audio),narration])
