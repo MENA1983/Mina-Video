@@ -14,6 +14,22 @@ class PublicContractTests(unittest.TestCase):
         self.assertIn("manifest_sha256", payload)
         self.assertEqual(data.get("event_type"), "render-video")
 
+    def test_media_capability_registry_is_provider_neutral(self):
+        data = json.loads((ROOT / "media" / "capabilities.json").read_text())
+        self.assertEqual(data.get("schema"), "mina-video-capabilities/v1")
+        self.assertEqual(data.get("execution_plane"), "Mina-Video")
+        self.assertEqual(data.get("capability_policy"), "provider-neutral")
+        ids = {item.get("id") for item in data.get("capabilities", [])}
+        for required in {
+            "video.render",
+            "video.generate",
+            "image.generate",
+            "audio.tts",
+            "music.generate",
+        }:
+            self.assertIn(required, ids)
+        self.assertIn("provider-neutral", data.get("extension_rule", ""))
+
     def test_renderer_has_duplicate_safe_release_tag(self):
         source = (ROOT / "video-runner" / "render.py").read_text()
         self.assertIn("mina-video-", source)
