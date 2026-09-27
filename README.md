@@ -1,10 +1,25 @@
 # Mina Video 🎬
 
-Standalone external video-production engine for the AI Viral Content Factory.
+Standalone external media-execution engine for the AI Viral Content Factory.
 
 ## Role
 
 `Mina-Video` is the execution plane. The private factory remains the control plane for content planning, quality, rights, policy, approval, publication authorization, idempotency, reconciliation, analytics and learning.
+
+## Media ownership
+
+All media execution capabilities belong here, not in the private Factory. This includes current and future:
+
+- video generation and rendering;
+- image generation and processing;
+- voice, narration, speech and audio processing;
+- music generation and processing;
+- captions, thumbnails, effects and other media post-processing;
+- adapters for approved external media providers.
+
+See `media/capabilities.json` for the provider-neutral capability registry. New media tools can be added by registering a capability/provider implementation here without turning the Factory into a second media engine.
+
+The Factory decides **what is authorized and required**. Mina-Video decides **how the approved media work is executed**.
 
 ## Current pipeline
 
