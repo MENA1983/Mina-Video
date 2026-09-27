@@ -1,0 +1,59 @@
+{
+  "schema": "mina-video-capabilities/v1",
+  "execution_plane": "Mina-Video",
+  "capability_policy": "provider-neutral",
+  "capabilities": [
+    {
+      "id": "video.render",
+      "kind": "video",
+      "description": "Assemble and render an approved media package into a video artifact"
+    },
+    {
+      "id": "video.generate",
+      "kind": "video",
+      "description": "Generate or transform video through an approved provider adapter"
+    },
+    {
+      "id": "image.generate",
+      "kind": "image",
+      "description": "Generate or transform image assets through an approved provider adapter"
+    },
+    {
+      "id": "image.process",
+      "kind": "image",
+      "description": "Resize, crop, composite, optimize or otherwise process approved images"
+    },
+    {
+      "id": "audio.tts",
+      "kind": "audio",
+      "description": "Generate narration or speech audio through an approved provider/renderer"
+    },
+    {
+      "id": "audio.process",
+      "kind": "audio",
+      "description": "Mix, normalize, trim or otherwise process approved audio"
+    },
+    {
+      "id": "music.generate",
+      "kind": "music",
+      "description": "Generate or transform music through an approved provider adapter"
+    },
+    {
+      "id": "music.process",
+      "kind": "music",
+      "description": "Prepare approved music beds and mixes for rendering"
+    },
+    {
+      "id": "captions.render",
+      "kind": "media",
+      "description": "Render subtitles/captions as part of media execution"
+    },
+    {
+      "id": "thumbnail.render",
+      "kind": "image",
+      "description": "Render approved thumbnail assets"
+    }
+  ],
+  "extension_rule": "New media capabilities are registered here and remain inside Mina-Video; the Factory contract stays provider-neutral.",
+  "security_rule": "Registration does not grant credentials, billing, publication authority, or permission to bypass Factory policy/rights/approval gates."
+}
