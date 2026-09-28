@@ -8,6 +8,8 @@
   "result": {
     "tag": "mina-video-<job_id>",
     "asset": "GitHub Release asset output.mp4",
-    "status": "RENDERED"
+    "status": "RENDERED",
+    "manifest_sha256": "sha256 hex",
+    "provenance": "release notes contain exact manifest SHA-256"
   }
 }
