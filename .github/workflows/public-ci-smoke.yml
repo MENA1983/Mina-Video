@@ -12,13 +12,17 @@ permissions:
 jobs:
   smoke-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Install public media test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg espeak-ng
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Run public smoke tests
+      - name: Run public smoke and media tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
