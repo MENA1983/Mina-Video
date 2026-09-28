@@ -151,6 +151,25 @@ jobs:
         if: steps.duplicate_guard.outputs.exists != 'true'
         run: python video-runner/render.py --manifest manifest.json --output output.mp4 | tee render-result.json
 
+      - name: Build release provenance notes
+        if: steps.duplicate_guard.outputs.exists != 'true'
+        run: |
+          . ./render-tag.env
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('render-result.json').read_text(encoding='utf-8'))
+          digest=Path('render-tag.env').read_text(encoding='utf-8').split('MANIFEST_SHA256=',1)[1].strip().splitlines()[0]
+          Path('release-notes.md').write_text(
+              "## Render provenance\n\n"
+              + "Manifest SHA-256: `" + digest + "`\n\n"
+              + "```json\n"
+              + json.dumps(data, ensure_ascii=False, indent=2)
+              + "\n```\n",
+              encoding='utf-8',
+          )
+          PY
+
       - name: Publish deterministic render artifact
         if: steps.duplicate_guard.outputs.exists != 'true'
         env:
@@ -162,5 +181,5 @@ jobs:
             gh release view "$RENDER_TAG" --json url --jq .url
             exit 0
           fi
-          gh release create "$RENDER_TAG" output.mp4 --title "Mina Video $RENDER_TAG" --notes-file render-result.json
+          gh release create "$RENDER_TAG" output.mp4 --title "Mina Video $RENDER_TAG" --notes-file release-notes.md
           gh release view "$RENDER_TAG" --json url --jq .url
