@@ -163,6 +163,7 @@ jobs:
           Path('release-notes.md').write_text(
               "## Render provenance\n\n"
               + "Manifest SHA-256: `" + digest + "`\n\n"
+              + "Workflow Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\n\n"
               + "```json\n"
               + json.dumps(data, ensure_ascii=False, indent=2)
               + "\n```\n",
