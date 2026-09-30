@@ -39,19 +39,3 @@ jobs:
       - name: Run automatic tests
         run: |
           if [ -d tests ]; then python -m pytest -q; else exit 1; fi
-
-  failure-report:
-    if: ${{ failure() }}
-    needs: [tests]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Report to Mina-Video monitor
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh issue create --title "AUTO-TEST FAILURE: Mina-Video requires manager attention" --body "Automatic Mina-Video tests failed.
-          
-Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-Commit: ${{ github.sha }}
-
-Escalation: monitor -> Branch/Factory Manager -> Maintenance/Repair/Development. Do not blindly retry ambiguous external operations. Ordinary media tests stay on Mina-Video public CI."
