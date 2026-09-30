@@ -1,0 +1,78 @@
+name: Mina Video Branch Watchdog
+
+on:
+  workflow_run:
+    workflows: ["*"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+concurrency:
+  group: mina-video-watchdog
+  cancel-in-progress: false
+
+jobs:
+  incident:
+    if: ${{ github.event.workflow_run.conclusion != 'success' && github.event.workflow_run.conclusion != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Classify branch health incident
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+
+          case "$CONCLUSION" in
+            failure|timed_out)
+              severity="BLOCKING"
+              route="Maintenance -> Repair -> Development"
+              ;;
+            cancelled)
+              severity="ATTENTION"
+              route="Branch Manager -> Maintenance"
+              ;;
+            *)
+              severity="UNKNOWN"
+              route="Branch Manager -> Research"
+              ;;
+          esac
+
+          title="MINA-VIDEO INCIDENT: ${WORKFLOW} [${BRANCH}]"
+          existing="$(gh issue list --repo "$REPOSITORY" --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
+
+          body="## Mina-Video Branch Health Incident
+
+          **Severity:** ${severity}
+          **Workflow:** ${WORKFLOW}
+          **Conclusion:** ${CONCLUSION}
+          **Branch:** ${BRANCH}
+          **Commit:** ${SHA}
+          **Run:** ${RUN_URL}
+
+          ### Routing
+          ${route}
+
+          ### Safety
+          - Do not blindly retry ambiguous external operations.
+          - Keep ordinary media execution on Mina-Video public CI.
+          - Do not move secrets or private Factory code into this repository.
+          - A failed test is evidence for investigation, not permission to bypass a gate.
+
+          ### Required manager behavior
+          Classify the incident, preserve evidence, request the bounded team action, and re-check health after repair."
+
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$REPOSITORY" --title "$title" --body "$body"
+          fi
