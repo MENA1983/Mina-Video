@@ -2,7 +2,6 @@ name: Mina Video Branch Watchdog
 
 on:
   workflow_run:
-    workflows: ["*"]
     types: [completed]
 
 permissions:
