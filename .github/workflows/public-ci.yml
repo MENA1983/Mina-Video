@@ -1,16 +1,10 @@
-name: Mina Video Public CI
+name: Mina Video Maintenance CI
 
-# Public-safe, automatic CI for the Media Execution Plane.
-# The maintenance team uses this workflow as the routine validation gate.
-# No Factory/private secrets are referenced here.
+# Routine maintenance validation for the Media Execution Plane.
+# The maintenance team uses this scheduled/manual workflow.
+# Public-safe only: no Factory/private secrets.
 
 on:
-  push:
-    branches:
-      - "**"
-  pull_request:
-    branches:
-      - "**"
   schedule:
     - cron: "17 3 * * 1"
   workflow_dispatch:
@@ -19,27 +13,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: mina-video-public-ci-${{ github.workflow }}-${{ github.ref }}
+  group: mina-video-maintenance-ci
   cancel-in-progress: true
 
 jobs:
-  smoke-tests:
-    name: Public smoke tests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Run public smoke suite
-        run: python -m unittest discover -s tests -p 'test_*.py' -v
-
-  media-tests:
-    name: Media execution tests
+  maintenance-tests:
+    name: Maintenance test suite
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -60,5 +39,5 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install pytest
 
-      - name: Run complete public test suite
+      - name: Run public test suite
         run: python -m pytest -q
