@@ -1,13 +1,8 @@
-"""Mina-Video contract for bounded workforce reuse.
-
-Mina-Video may accept temporary operational tasks from Factory (media quality
-research, render diagnostics, evidence collection, adapter experiments), but
-it never receives Factory ownership, billing, governance, credentials, or
-final-live-activation authority.
-"""
+"""Mina-Video contract for bounded workforce reuse."""
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
+import re
 
 
 class ExecutionTask(str, Enum):
@@ -18,12 +13,9 @@ class ExecutionTask(str, Enum):
 
 
 FORBIDDEN_SCOPES = frozenset({
-    "ownership",
-    "billing",
-    "credentials",
-    "governance",
-    "final-live-activation",
+    "ownership", "billing", "credentials", "governance", "final-live-activation",
 })
+_OPEN_ENDED_EXPIRY = frozenset({"permanent", "never", "indefinite", "no-expiry", "none"})
 
 
 @dataclass(frozen=True)
@@ -34,8 +26,15 @@ class TemporaryExecutionAssignment:
     evidence_required: bool = True
 
 
+def _tokens(value: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", value.casefold()))
+
+
 def validate_assignment(assignment: TemporaryExecutionAssignment) -> bool:
-    scope = assignment.scope.casefold().strip()
-    if scope in {item.casefold() for item in FORBIDDEN_SCOPES}:
+    if not assignment.expires_when.strip() or assignment.expires_when.casefold().strip() in _OPEN_ENDED_EXPIRY:
         return False
-    return bool(assignment.expires_when.strip()) and assignment.evidence_required
+    if not assignment.evidence_required:
+        return False
+    scope_tokens = _tokens(assignment.scope)
+    forbidden_tokens = set().union(*(_tokens(item) for item in FORBIDDEN_SCOPES))
+    return not bool(scope_tokens & forbidden_tokens)
