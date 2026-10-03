@@ -131,13 +131,41 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           . ./render-tag.env
-          if gh release view "$RENDER_TAG" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            gh release view "$RENDER_TAG" --json url --jq .url
-          else
+          if ! gh release view "$RENDER_TAG" >/dev/null 2>&1; then
             echo "exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          # A deterministic tag is only an idempotency key when the existing
+          # release is bound to the exact same manifest. Never silently treat
+          # a tag collision or an old/unproven release as a successful replay.
+          RELEASE_JSON="$(gh release view "$RENDER_TAG" --json url,body)"
+          RELEASE_URL="$(printf '%s' "$RELEASE_JSON" | jq -r '.url // empty')"
+          RELEASE_BODY="$(printf '%s' "$RELEASE_JSON" | jq -r '.body // empty')"
+          EXPECTED_MANIFEST="Manifest SHA-256: \`$MANIFEST_SHA256\`"
+
+          if ! printf '%s' "$RELEASE_BODY" | grep -Fqx -- "$EXPECTED_MANIFEST"; then
+            echo "Deterministic release tag collision or missing authoritative manifest provenance: $RENDER_TAG"
+            echo "Existing release: $RELEASE_URL"
+            exit 1
+          fi
+
+          if ! printf '%s' "$RELEASE_BODY" | grep -Eq 'MP4 SHA-256: \`[0-9a-f]{64}\`'; then
+            echo "Existing deterministic release lacks authoritative MP4 provenance: $RENDER_TAG"
+            echo "Existing release: $RELEASE_URL"
+            exit 1
+          fi
+
+          if ! printf '%s' "$RELEASE_BODY" | grep -Eq 'Workflow Run: https://github\\.com/[^/]+/[^/]+/actions/runs/[0-9]+'; then
+            echo "Existing deterministic release lacks authoritative workflow provenance: $RENDER_TAG"
+            echo "Existing release: $RELEASE_URL"
+            exit 1
+          fi
+
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+          echo "Idempotent replay of an already-proven release: $RELEASE_URL"
 
       - name: Render MP4
         if: steps.duplicate_guard.outputs.exists != 'true'
