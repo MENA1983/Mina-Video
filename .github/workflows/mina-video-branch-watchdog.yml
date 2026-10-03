@@ -3,7 +3,7 @@ name: Mina Video Branch Watchdog
 on:
   workflow_run:
     types: [completed]
-    branches: [main, feat/durable-platform-rate-limits]
+    branches: [main, feat/durable-platform-rate-limits, feat/factory-bridge-provenance]
 
 permissions:
   actions: read
