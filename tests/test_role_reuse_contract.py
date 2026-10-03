@@ -42,6 +42,53 @@ class RoleReuseContractTests(unittest.TestCase):
             )
         )
 
+    def test_open_ended_expiry_is_rejected(self):
+        for expiry in ("permanent", "never", "indefinite", "no-expiry", "none"):
+            self.assertFalse(
+                validate_assignment(
+                    TemporaryExecutionAssignment(
+                        task=ExecutionTask.PROVIDER_EXPERIMENT,
+                        scope="provider-experiment",
+                        expires_when=expiry,
+                    )
+                )
+            )
+
+    def test_embedded_protected_scope_tokens_are_rejected(self):
+        for scope in ("grant billing access", "rotate credentials now", "ownership:admin", "final-live-activation-now"):
+            self.assertFalse(
+                validate_assignment(
+                    TemporaryExecutionAssignment(
+                        task=ExecutionTask.PROVIDER_EXPERIMENT,
+                        scope=scope,
+                        expires_when="later",
+                    )
+                )
+            )
+
+    def test_evidence_is_required(self):
+        self.assertFalse(
+            validate_assignment(
+                TemporaryExecutionAssignment(
+                    task=ExecutionTask.RENDER_DIAGNOSTICS,
+                    scope="diagnostics",
+                    expires_when="later",
+                    evidence_required=False,
+                )
+            )
+        )
+
+    def test_invalid_task_type_is_rejected(self):
+        self.assertFalse(
+            validate_assignment(
+                TemporaryExecutionAssignment(
+                    task="not-a-real-task",
+                    scope="diagnostics",
+                    expires_when="later",
+                )
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
