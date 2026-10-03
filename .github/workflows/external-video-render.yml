@@ -16,14 +16,15 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 concurrency:
   group: mina-video-${{ github.event.client_payload.manifest_sha256 || inputs.manifest_sha256 || github.run_id }}
   cancel-in-progress: false
 
 env:
-  # Production media and manifest downloads are fail-closed unless the owner
-  # explicitly configures exact approved public hosts in this repository variable.
   MINA_VIDEO_ALLOWED_HOSTS: ${{ vars.MINA_VIDEO_ALLOWED_HOSTS }}
 
 jobs:
@@ -64,18 +65,15 @@ jobs:
         run: |
           python - <<'PY'
           import hashlib, ipaddress, os, socket, urllib.parse, urllib.request
-
           raw_url=os.environ['MANIFEST_URL'].strip()
           parsed=urllib.parse.urlparse(raw_url)
           if parsed.scheme != 'https' or not parsed.hostname or parsed.fragment or parsed.username or parsed.password:
               raise SystemExit('manifest_url must be HTTPS without fragment or embedded credentials')
-
           try:
               host=parsed.hostname.rstrip('.').encode('idna').decode('ascii').lower()
               port=parsed.port or 443
           except (UnicodeError, ValueError):
               raise SystemExit('manifest_url has an invalid hostname or port')
-
           allowed=set()
           for item in os.environ.get('ALLOWED_HOSTS','').split(','):
               item=item.strip()
@@ -88,26 +86,21 @@ jobs:
                   allowed.add((h,p.port or 443))
               except (UnicodeError, ValueError):
                   raise SystemExit('invalid MINA_VIDEO_ALLOWED_HOSTS entry')
-
           if (host,port) not in allowed:
               raise SystemExit('manifest_url host is not approved by MINA_VIDEO_ALLOWED_HOSTS')
-
           try:
               infos=socket.getaddrinfo(host,port,type=socket.SOCK_STREAM)
           except socket.gaierror as exc:
               raise SystemExit(f'manifest_url DNS resolution failed: {exc}')
           addresses={info[4][0] for info in infos}
-          if not addresses:
-              raise SystemExit('manifest_url DNS returned no addresses')
+          if not addresses: raise SystemExit('manifest_url DNS returned no addresses')
           for address in addresses:
               ip=ipaddress.ip_address(address)
               if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
                   raise SystemExit(f'manifest_url resolves to non-public IP: {address}')
-
           req=urllib.request.Request(raw_url,headers={'User-Agent':'mina-video-runner/1'})
           with urllib.request.urlopen(req,timeout=30) as r:
-              if r.geturl() != raw_url:
-                  raise SystemExit('manifest_url redirects are not permitted in manual mode')
+              if r.geturl() != raw_url: raise SystemExit('manifest_url redirects are not permitted in manual mode')
               data=r.read(5*1024*1024+1)
           if len(data)>5*1024*1024: raise SystemExit('manifest too large')
           actual=hashlib.sha256(data).hexdigest()
@@ -138,37 +131,90 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           . ./render-tag.env
-          if gh release view "$RENDER_TAG" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Existing render found; refusing duplicate render."
-            gh release view "$RENDER_TAG" --json url --jq .url
-          else
+          if ! gh release view "$RENDER_TAG" >/dev/null 2>&1; then
             echo "exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          # A deterministic tag is only an idempotency key when the existing
+          # release is bound to the exact same manifest. Never silently treat
+          # a tag collision or an old/unproven release as a successful replay.
+          RELEASE_JSON="$(gh release view "$RENDER_TAG" --json url,body)"
+          RELEASE_URL="$(printf '%s' "$RELEASE_JSON" | jq -r '.url // empty')"
+          RELEASE_BODY="$(printf '%s' "$RELEASE_JSON" | jq -r '.body // empty')"
+          EXPECTED_MANIFEST="Manifest SHA-256: \`$MANIFEST_SHA256\`"
+
+          if ! printf '%s' "$RELEASE_BODY" | grep -Fqx -- "$EXPECTED_MANIFEST"; then
+            echo "Deterministic release tag collision or missing authoritative manifest provenance: $RENDER_TAG"
+            echo "Existing release: $RELEASE_URL"
+            exit 1
+          fi
+
+          if ! printf '%s' "$RELEASE_BODY" | grep -Eq 'MP4 SHA-256: \`[0-9a-f]{64}\`'; then
+            echo "Existing deterministic release lacks authoritative MP4 provenance: $RENDER_TAG"
+            echo "Existing release: $RELEASE_URL"
+            exit 1
+          fi
+
+          if ! printf '%s' "$RELEASE_BODY" | grep -Eq 'Workflow Run: https://github\\.com/[^/]+/[^/]+/actions/runs/[0-9]+'; then
+            echo "Existing deterministic release lacks authoritative workflow provenance: $RENDER_TAG"
+            echo "Existing release: $RELEASE_URL"
+            exit 1
+          fi
+
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+          echo "Idempotent replay of an already-proven release: $RELEASE_URL"
 
       - name: Render MP4
         if: steps.duplicate_guard.outputs.exists != 'true'
         run: python video-runner/render.py --manifest manifest.json --output output.mp4 | tee render-result.json
+
+      - name: Prove media artifact identity
+        if: steps.duplicate_guard.outputs.exists != 'true'
+        run: |
+          set -euo pipefail
+          test -s output.mp4
+          MP4_SHA256="$(sha256sum output.mp4 | awk '{print $1}')"
+          printf 'MP4_SHA256=%s\n' "$MP4_SHA256" >> render-tag.env
+          printf 'Artifact: output.mp4\nArtifact SHA-256: `%s`\n' "$MP4_SHA256" > artifact-provenance.md
+
+      - name: Generate signed artifact provenance
+        if: steps.duplicate_guard.outputs.exists != 'true'
+        uses: actions/attest@v4
+        with:
+          subject-path: output.mp4
+
+      - name: Verify signed artifact provenance
+        if: steps.duplicate_guard.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh attestation verify output.mp4 -R "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/external-video-render.yml"
+          printf 'ATTESTATION_VERIFIED=PASSED\n' >> render-tag.env
 
       - name: Build release provenance notes
         if: steps.duplicate_guard.outputs.exists != 'true'
         run: |
           . ./render-tag.env
           python - <<'PY'
-          import json
+          import json, os
           from pathlib import Path
           data=json.loads(Path('render-result.json').read_text(encoding='utf-8'))
-          digest=Path('render-tag.env').read_text(encoding='utf-8').split('MANIFEST_SHA256=',1)[1].strip().splitlines()[0]
+          env={}
+          for line in Path('render-tag.env').read_text(encoding='utf-8').splitlines():
+              if '=' in line:
+                  k,v=line.split('=',1); env[k]=v
           Path('release-notes.md').write_text(
-              "## Render provenance\n\n"
-              + "Manifest SHA-256: `" + digest + "`\n\n"
-              + "Workflow Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\n\n"
-              + "```json\n"
-              + json.dumps(data, ensure_ascii=False, indent=2)
-              + "\n```\n",
-              encoding='utf-8',
-          )
+              '## Render provenance\n\n'
+              + f"Manifest SHA-256: `{env['MANIFEST_SHA256']}`\n\n"
+              + f"MP4 SHA-256: `{env['MP4_SHA256']}`\n\n"
+              + f"Workflow Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\n\n"
+              + 'Artifact attestation: generated by `actions/attest@v4`\n\n'
+              + 'Attestation verification: `PASSED`\n\n'
+              encoding='utf-8')
           PY
 
       - name: Publish deterministic render artifact

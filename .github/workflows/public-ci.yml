@@ -1,0 +1,43 @@
+name: Mina Video Maintenance CI
+
+# Routine maintenance validation for the Media Execution Plane.
+# The maintenance team uses this scheduled/manual workflow.
+# Public-safe only: no Factory/private secrets.
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mina-video-maintenance-ci
+  cancel-in-progress: true
+
+jobs:
+  maintenance-tests:
+    name: Maintenance test suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install media runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg espeak-ng
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+
+      - name: Run public test suite
+        run: python -m pytest -q
