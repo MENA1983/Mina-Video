@@ -31,6 +31,8 @@ def _tokens(value: str) -> set[str]:
 
 
 def validate_assignment(assignment: TemporaryExecutionAssignment) -> bool:
+    if not isinstance(assignment.task, ExecutionTask):
+        return False
     if not assignment.expires_when.strip() or assignment.expires_when.casefold().strip() in _OPEN_ENDED_EXPIRY:
         return False
     if not assignment.evidence_required:
