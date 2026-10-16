@@ -64,6 +64,10 @@ Only HTTPS public assets that have already passed the factory's rights/policy ga
 
 Set the GitHub repository variable `MINA_VIDEO_ALLOWED_HOSTS` to the authoritative host(s) defined by the Factory↔Mina-Video contract. Do not guess or broaden this list. An empty or malformed value intentionally prevents production rendering.
 
+## Production line operations
+
+See `architecture/PRODUCTION_LINE_OPERATIONS.md` for branch-manager responsibilities, render-line monitoring, stale-run detection, and incident handling. The scheduled watchdog reports workflow health only; it does not perform repairs, retries, or publishing.
+
 ## Status
 
 The renderer and workflow have been hardened with a fail-closed asset-host trust boundary and public regression coverage. A real Factory↔Mina-Video end-to-end render, using the owner-configured approved host, is still required before the integration can be called production-verified.
