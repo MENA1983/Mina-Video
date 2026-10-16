@@ -65,5 +65,6 @@
   "extension_rule": "New video, image, audio, voice, music or media-processing capabilities are registered and implemented inside Mina-Video; the Factory boundary remains provider-neutral.",
   "adoption_rule": "A capability must have evidence for usefulness, security, rights/policy compatibility, bounded resource impact, isolation and rollback/containment before production activation.",
   "anti_sprawl_rule": "Do not register or retain a capability solely because it is new or free. First identify the concrete gap, existing alternatives and measurable reason to keep it.",
-  "security_rule": "Registration does not grant credentials, billing, publication authority, governance authority, or permission to bypass Factory policy/rights/approval gates."
+  "security_rule": "Registration does not grant credentials, billing, publication authority, governance authority, or permission to bypass Factory policy/rights/approval gates.",
+  "company_wide_lifecycle_policy": "The canonical company-wide reuse and rehabilitation charter is maintained by AI Viral Content Factory at architecture/COMPANY_WIDE_REUSE_AND_REHABILITATION_CHARTER.md. This local registry covers media-execution capabilities only. Every future branch inherits the same lifecycle; registration alone never means VERIFIED, APPROVED, or ACTIVE."
 }
