@@ -2,6 +2,14 @@
   "schema": "mina-video-capabilities/v1",
   "execution_plane": "Mina-Video",
   "capability_policy": "provider-neutral",
+  "lifecycle": [
+    "DISCOVERED",
+    "TRIAGED",
+    "EXPERIMENTAL",
+    "VERIFIED",
+    "APPROVED",
+    "ACTIVE"
+  ],
   "capabilities": [
     {
       "id": "video.render",
@@ -54,6 +62,8 @@
       "description": "Render approved thumbnail assets"
     }
   ],
-  "extension_rule": "New media capabilities are registered here and remain inside Mina-Video; the Factory contract stays provider-neutral.",
-  "security_rule": "Registration does not grant credentials, billing, publication authority, or permission to bypass Factory policy/rights/approval gates."
+  "extension_rule": "New video, image, audio, voice, music or media-processing capabilities are registered and implemented inside Mina-Video; the Factory boundary remains provider-neutral.",
+  "adoption_rule": "A capability must have evidence for usefulness, security, rights/policy compatibility, bounded resource impact, isolation and rollback/containment before production activation.",
+  "anti_sprawl_rule": "Do not register or retain a capability solely because it is new or free. First identify the concrete gap, existing alternatives and measurable reason to keep it.",
+  "security_rule": "Registration does not grant credentials, billing, publication authority, governance authority, or permission to bypass Factory policy/rights/approval gates."
 }
