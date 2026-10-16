@@ -17,7 +17,7 @@ All media execution capabilities belong here, not in the private Factory. This i
 - captions, thumbnails, effects and other media post-processing;
 - adapters for approved external media providers.
 
-See `media/capabilities.json` for the provider-neutral capability registry. New media tools can be added by registering a capability/provider implementation here without turning the Factory into a second media engine.
+See `media/capabilities.json` for the provider-neutral capability registry and `architecture/COMPANY_WIDE_REUSE_AND_REHABILITATION.md` for the company-wide Keep → Test → Prove → Reassign → Retire → Delete policy. The same policy applies to the Factory central control tower and every future company branch; this local file only inventories media-execution capabilities. New media tools can be added by registering a capability/provider implementation here without turning the Factory into a second media engine.
 
 The Factory decides **what is authorized and required**. Mina-Video decides **how the approved media work is executed**.
 
@@ -40,6 +40,10 @@ FFmpeg + eSpeak-ng
         ↓
 GitHub Release artifact
 ```
+
+## Company-wide lifecycle rule
+
+Do not replace a working renderer/provider merely because a newer option exists. Inventory it, test alternatives in isolation, prove the exact capability with quality/security/cost/recovery evidence, and retain or reassign the incumbent until the replacement passes observation and rollback checks. Any retirement or deletion follows the Factory's company-wide charter and owner approval. This branch does not own company-wide policy, secrets, channel approvals, or publishing.
 
 ## Limits
 
