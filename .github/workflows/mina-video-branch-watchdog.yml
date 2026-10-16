@@ -21,7 +21,6 @@ concurrency:
 
 jobs:
   incident:
-    if: ${{ github.event.workflow_run.conclusion != 'success' && github.event.workflow_run.conclusion != 'skipped' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -36,6 +35,11 @@ jobs:
           RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           set -euo pipefail
+
+          if [ "$CONCLUSION" = "success" ] || [ "$CONCLUSION" = "skipped" ]; then
+            echo "No incident: monitored workflow concluded $CONCLUSION."
+            exit 0
+          fi
 
           case "$CONCLUSION" in
             failure|timed_out)
