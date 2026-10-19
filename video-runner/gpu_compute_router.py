@@ -68,6 +68,7 @@ def plan_compute(
     task: str,
     environ: Mapping[str, str] | None = None,
     authorization: Mapping[str, object] | None = None,
+    job_id: str | None = None,
 ) -> ComputePlan:
     """Return a deterministic plan; never provisions or dispatches work.
 
@@ -75,7 +76,7 @@ def plan_compute(
     Schema validation alone does not authenticate its source.
     """
     env = environ or {}
-    if task not in SUPPORTED_TASKS:
+    if not isinstance(task, str) or task not in SUPPORTED_TASKS:
         raise ValueError(f"unsupported media task: {task}")
     if task in CPU_PROFILES:
         return ComputePlan(task, "cpu", "local", "READY", CPU_PROFILES[task])
@@ -107,8 +108,10 @@ def plan_compute(
         auth = parse_gpu_authorization(authorization)
     except (TypeError, ValueError) as exc:
         return ComputePlan(task, "cpu", "local", "SAFE_HOLD", f"Factory authorization record is invalid: {exc}")
-    if auth.task != task:
-        return ComputePlan(task, "cpu", "local", "GPU_AUTH_SCOPE_MISMATCH", "Factory authorization does not match the requested task")
+    if not isinstance(job_id, str) or not job_id:
+        return ComputePlan(task, "cpu", "local", "GPU_AUTH_SCOPE_MISMATCH", "current job ID is required to bind the Factory authorization")
+    if auth.job_id != job_id or auth.task != task:
+        return ComputePlan(task, "cpu", "local", "GPU_AUTH_SCOPE_MISMATCH", "Factory authorization does not match the requested job and task")
     if not auth.factory_approved:
         return ComputePlan(task, "cpu", "local", "GPU_NOT_APPROVED", "Factory/company approval is absent")
     if not auth.production_required:
