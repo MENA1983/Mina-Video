@@ -7,6 +7,7 @@ are registered. CPU remains the safe default. No provider can incur paid usage h
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 from typing import Mapping, NamedTuple
 
@@ -16,6 +17,7 @@ _AUTH_SPEC = importlib.util.spec_from_file_location(
 if _AUTH_SPEC is None or _AUTH_SPEC.loader is None:
     raise ImportError("GPU authorization contract is unavailable")
 _AUTH_MODULE = importlib.util.module_from_spec(_AUTH_SPEC)
+sys.modules[_AUTH_SPEC.name] = _AUTH_MODULE
 _AUTH_SPEC.loader.exec_module(_AUTH_MODULE)
 parse_gpu_authorization = _AUTH_MODULE.parse_gpu_authorization
 
