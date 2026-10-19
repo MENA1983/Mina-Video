@@ -6,6 +6,8 @@ on:
     paths:
       - "video-runner/gpu_compute_router.py"
       - "tests/test_gpu_compute_router.py"
+      - "video-runner/gpu_job_contract.py"
+      - "tests/test_gpu_job_contract.py"
       - "architecture/ON_DEMAND_FREE_GPU.md"
       - ".github/workflows/gpu-gate-tests.yml"
   push:
