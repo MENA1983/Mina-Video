@@ -98,3 +98,13 @@ def test_report_makes_non_activation_explicit():
     assert report["dispatch_enabled"] is False
     assert report["max_cost_usd"] == 0
     assert report["registered_providers"] == []
+
+
+
+def test_missing_cost_budget_is_not_proof_of_zero_cost():
+    plan = gpu.plan_compute("image.generate", {
+        gpu.GPU_EXPERIMENTAL_ENV: "true",
+        gpu.GPU_PROVIDER_ENV: "huggingface_zerogpu",
+    })
+    assert plan.selected_device == "cpu"
+    assert plan.status == "SAFE_HOLD"
