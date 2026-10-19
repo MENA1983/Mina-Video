@@ -6,8 +6,7 @@ are registered. CPU remains the safe default. No provider can incur paid usage h
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Mapping
+from typing import Mapping, NamedTuple
 
 GPU_EXPERIMENTAL_ENV = "MINA_GPU_EXPERIMENTAL_ENABLED"
 GPU_PROVIDER_ENV = "MINA_GPU_PROVIDER"
@@ -25,8 +24,7 @@ SUPPORTED_TASKS = frozenset({
     "thumbnail.render",
 })
 
-@dataclass(frozen=True)
-class ComputePlan:
+class ComputePlan(NamedTuple):
     task: str
     selected_device: str
     provider: str
