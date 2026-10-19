@@ -78,8 +78,8 @@ def test_exhausted_free_quota_falls_back_to_cpu():
     assert plan.status == "GPU_QUOTA_EXHAUSTED"
 
 
-def test_verified_provider_still_cannot_dispatch_without_adapter():
-    env = {
+def verified_env():
+    return {
         gpu.GPU_EXPERIMENTAL_ENV: "true",
         gpu.GPU_PROVIDER_ENV: "huggingface_zerogpu",
         gpu.GPU_MAX_COST_ENV: "0",
@@ -88,6 +88,28 @@ def test_verified_provider_still_cannot_dispatch_without_adapter():
         "MINA_GPU_FREE_QUOTA_REMAINING_SECONDS": "300",
         "MINA_GPU_PROVIDER_VERIFIED": "true",
     }
+
+
+def test_verified_provider_requires_explicit_factory_approval():
+    env = verified_env()
+    env[gpu.GPU_PRODUCTION_REQUIRED_ENV] = "true"
+    plan = gpu.plan_compute("image.generate", env)
+    assert plan.selected_device == "cpu"
+    assert plan.status == "GPU_NOT_APPROVED"
+
+
+def test_verified_provider_requires_production_need():
+    env = verified_env()
+    env[gpu.GPU_FACTORY_APPROVED_ENV] = "true"
+    plan = gpu.plan_compute("image.generate", env)
+    assert plan.selected_device == "cpu"
+    assert plan.status == "GPU_NOT_REQUIRED"
+
+
+def test_verified_provider_still_cannot_dispatch_without_adapter():
+    env = verified_env()
+    env[gpu.GPU_FACTORY_APPROVED_ENV] = "true"
+    env[gpu.GPU_PRODUCTION_REQUIRED_ENV] = "true"
     plan = gpu.plan_compute("image.generate", env)
     assert plan.selected_device == "cpu"
     assert plan.status == "GPU_ADAPTER_NOT_IMPLEMENTED"
@@ -98,7 +120,6 @@ def test_report_makes_non_activation_explicit():
     assert report["dispatch_enabled"] is False
     assert report["max_cost_usd"] == 0
     assert report["registered_providers"] == []
-
 
 
 def test_missing_cost_budget_is_not_proof_of_zero_cost():
