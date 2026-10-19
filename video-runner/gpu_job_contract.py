@@ -5,7 +5,8 @@ A caller must persist the job ID and reconcile unknown outcomes before any retry
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from typing import NamedTuple
+
 import hashlib
 import re
 
@@ -16,8 +17,7 @@ class UnsafeJobResult(ValueError):
     """The returned job evidence is incomplete or fails integrity checks."""
 
 
-@dataclass(frozen=True)
-class VerifiedArtifact:
+class VerifiedArtifact(NamedTuple):
     job_id: str
     input_sha256: str
     output_sha256: str
