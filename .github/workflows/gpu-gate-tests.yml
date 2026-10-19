@@ -5,7 +5,9 @@ on:
     branches: [main]
     paths:
       - "video-runner/gpu_compute_router.py"
+      - "video-runner/gpu_authorization_contract.py"
       - "tests/test_gpu_compute_router.py"
+      - "tests/test_gpu_authorization_contract.py"
       - "video-runner/gpu_job_contract.py"
       - "tests/test_gpu_job_contract.py"
       - "architecture/ON_DEMAND_FREE_GPU.md"
@@ -14,7 +16,9 @@ on:
     branches: [main]
     paths:
       - "video-runner/gpu_compute_router.py"
+      - "video-runner/gpu_authorization_contract.py"
       - "tests/test_gpu_compute_router.py"
+      - "tests/test_gpu_authorization_contract.py"
       - "video-runner/gpu_job_contract.py"
       - "tests/test_gpu_job_contract.py"
       - "architecture/ON_DEMAND_FREE_GPU.md"
@@ -33,4 +37,4 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install pytest
-      - run: python -m pytest -q tests/test_gpu_compute_router.py tests/test_gpu_job_contract.py
+      - run: python -m pytest -q tests/test_gpu_compute_router.py tests/test_gpu_authorization_contract.py tests/test_gpu_job_contract.py
