@@ -53,8 +53,10 @@ def _enabled(value: str | None) -> bool:
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 def _zero_budget(value: str | None) -> bool:
+    # Missing configuration is not evidence that a provider cannot charge.
+    # Require an explicit zero-cost declaration when GPU is opted in.
     if value is None or not value.strip():
-        return True
+        return False
     try:
         return float(value) == 0.0
     except (TypeError, ValueError):
