@@ -6,24 +6,28 @@ are registered. CPU remains the safe default. No provider can incur paid usage h
 """
 from __future__ import annotations
 
+import importlib.util
+import sys
+from pathlib import Path
 from typing import Mapping, NamedTuple
+
+_AUTH_SPEC = importlib.util.spec_from_file_location(
+    "mina_gpu_authorization_contract", Path(__file__).with_name("gpu_authorization_contract.py")
+)
+if _AUTH_SPEC is None or _AUTH_SPEC.loader is None:
+    raise ImportError("GPU authorization contract is unavailable")
+_AUTH_MODULE = importlib.util.module_from_spec(_AUTH_SPEC)
+sys.modules[_AUTH_SPEC.name] = _AUTH_MODULE
+_AUTH_SPEC.loader.exec_module(_AUTH_MODULE)
+parse_gpu_authorization = _AUTH_MODULE.parse_gpu_authorization
 
 GPU_EXPERIMENTAL_ENV = "MINA_GPU_EXPERIMENTAL_ENABLED"
 GPU_PROVIDER_ENV = "MINA_GPU_PROVIDER"
 GPU_MAX_COST_ENV = "MINA_GPU_MAX_COST_USD"
-GPU_FACTORY_APPROVED_ENV = "MINA_GPU_FACTORY_APPROVED"
-GPU_PRODUCTION_REQUIRED_ENV = "MINA_GPU_PRODUCTION_REQUIRED"
 SUPPORTED_TASKS = frozenset({
-    "video.render",
-    "video.generate",
-    "image.generate",
-    "image.process",
-    "audio.tts",
-    "audio.process",
-    "music.generate",
-    "music.process",
-    "captions.render",
-    "thumbnail.render",
+    "video.render", "video.generate", "image.generate", "image.process",
+    "audio.tts", "audio.process", "music.generate", "music.process",
+    "captions.render", "thumbnail.render",
 })
 
 class ComputePlan(NamedTuple):
@@ -34,8 +38,6 @@ class ComputePlan(NamedTuple):
     reason: str
     max_cost_usd: float = 0.0
 
-# GPU acceleration is useful only where the actual implementation can use CUDA.
-# FFmpeg rendering stays CPU until a verified CUDA/NVENC build and benchmark exist.
 GPU_PROFILES: Mapping[str, str] = {
     "image.generate": "pytorch-inference",
     "video.generate": "pytorch-inference",
@@ -55,8 +57,6 @@ def _enabled(value: str | None) -> bool:
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 def _zero_budget(value: str | None) -> bool:
-    # Missing configuration is not evidence that a provider cannot charge.
-    # Require an explicit zero-cost declaration when GPU is opted in.
     if value is None or not value.strip():
         return False
     try:
@@ -64,10 +64,19 @@ def _zero_budget(value: str | None) -> bool:
     except (TypeError, ValueError):
         return False
 
-def plan_compute(task: str, environ: Mapping[str, str] | None = None) -> ComputePlan:
-    """Return a deterministic plan; never provisions or dispatches work."""
+def plan_compute(
+    task: str,
+    environ: Mapping[str, str] | None = None,
+    authorization: Mapping[str, object] | None = None,
+    job_id: str | None = None,
+) -> ComputePlan:
+    """Return a deterministic plan; never provisions or dispatches work.
+
+    The authorization payload must originate from trusted Factory orchestration.
+    Schema validation alone does not authenticate its source.
+    """
     env = environ or {}
-    if task not in SUPPORTED_TASKS:
+    if not isinstance(task, str) or task not in SUPPORTED_TASKS:
         raise ValueError(f"unsupported media task: {task}")
     if task in CPU_PROFILES:
         return ComputePlan(task, "cpu", "local", "READY", CPU_PROFILES[task])
@@ -78,13 +87,9 @@ def plan_compute(task: str, environ: Mapping[str, str] | None = None) -> Compute
     provider = (env.get(GPU_PROVIDER_ENV) or "").strip().lower()
     if provider != "huggingface_zerogpu":
         return ComputePlan(task, "cpu", "local", "GPU_UNAVAILABLE", "no verified free GPU provider is configured")
-    # A provider name alone is not evidence of a reachable worker, remaining quota,
-    # or a bill-free execution path. Do not promote until those checks are implemented.
     required = (
-        "MINA_GPU_WORKER_URL",
-        "MINA_GPU_ALLOWED_HOSTS",
-        "MINA_GPU_FREE_QUOTA_REMAINING_SECONDS",
-        "MINA_GPU_PROVIDER_VERIFIED",
+        "MINA_GPU_WORKER_URL", "MINA_GPU_ALLOWED_HOSTS",
+        "MINA_GPU_FREE_QUOTA_REMAINING_SECONDS", "MINA_GPU_PROVIDER_VERIFIED",
     )
     missing = [key for key in required if not (env.get(key) or "").strip()]
     if missing:
@@ -97,10 +102,19 @@ def plan_compute(task: str, environ: Mapping[str, str] | None = None) -> Compute
         return ComputePlan(task, "cpu", "local", "SAFE_HOLD", "free GPU quota is invalid")
     if quota <= 0:
         return ComputePlan(task, "cpu", "local", "GPU_QUOTA_EXHAUSTED", "no verified free GPU quota remains")
-    # Require both an explicit company decision and a production team's task-level need.
-    if not _enabled(env.get(GPU_FACTORY_APPROVED_ENV)):
+    if authorization is None:
+        return ComputePlan(task, "cpu", "local", "GPU_NOT_APPROVED", "Factory authorization record is absent")
+    try:
+        auth = parse_gpu_authorization(authorization)
+    except (TypeError, ValueError) as exc:
+        return ComputePlan(task, "cpu", "local", "SAFE_HOLD", f"Factory authorization record is invalid: {exc}")
+    if not isinstance(job_id, str) or not job_id:
+        return ComputePlan(task, "cpu", "local", "GPU_AUTH_SCOPE_MISMATCH", "current job ID is required to bind the Factory authorization")
+    if auth.job_id != job_id or auth.task != task:
+        return ComputePlan(task, "cpu", "local", "GPU_AUTH_SCOPE_MISMATCH", "Factory authorization does not match the requested job and task")
+    if not auth.factory_approved:
         return ComputePlan(task, "cpu", "local", "GPU_NOT_APPROVED", "Factory/company approval is absent")
-    if not _enabled(env.get(GPU_PRODUCTION_REQUIRED_ENV)):
+    if not auth.production_required:
         return ComputePlan(task, "cpu", "local", "GPU_NOT_REQUIRED", "production has not declared GPU necessary for this task")
     return ComputePlan(task, "cpu", "local", "GPU_ADAPTER_NOT_IMPLEMENTED", "provider execution adapter is not implemented; no dispatch performed")
 
