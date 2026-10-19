@@ -11,6 +11,8 @@ from typing import Mapping, NamedTuple
 GPU_EXPERIMENTAL_ENV = "MINA_GPU_EXPERIMENTAL_ENABLED"
 GPU_PROVIDER_ENV = "MINA_GPU_PROVIDER"
 GPU_MAX_COST_ENV = "MINA_GPU_MAX_COST_USD"
+GPU_FACTORY_APPROVED_ENV = "MINA_GPU_FACTORY_APPROVED"
+GPU_PRODUCTION_REQUIRED_ENV = "MINA_GPU_PRODUCTION_REQUIRED"
 SUPPORTED_TASKS = frozenset({
     "video.render",
     "video.generate",
@@ -95,6 +97,11 @@ def plan_compute(task: str, environ: Mapping[str, str] | None = None) -> Compute
         return ComputePlan(task, "cpu", "local", "SAFE_HOLD", "free GPU quota is invalid")
     if quota <= 0:
         return ComputePlan(task, "cpu", "local", "GPU_QUOTA_EXHAUSTED", "no verified free GPU quota remains")
+    # Require both an explicit company decision and a production team's task-level need.
+    if not _enabled(env.get(GPU_FACTORY_APPROVED_ENV)):
+        return ComputePlan(task, "cpu", "local", "GPU_NOT_APPROVED", "Factory/company approval is absent")
+    if not _enabled(env.get(GPU_PRODUCTION_REQUIRED_ENV)):
+        return ComputePlan(task, "cpu", "local", "GPU_NOT_REQUIRED", "production has not declared GPU necessary for this task")
     return ComputePlan(task, "cpu", "local", "GPU_ADAPTER_NOT_IMPLEMENTED", "provider execution adapter is not implemented; no dispatch performed")
 
 def provider_capability_report() -> dict[str, object]:
