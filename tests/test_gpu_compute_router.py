@@ -79,7 +79,7 @@ def authorization(**overrides):
 def test_missing_quota_or_verification_falls_back_to_cpu():
     env = verified_env()
     env.pop("MINA_GPU_PROVIDER_VERIFIED")
-    plan = gpu.plan_compute("image.generate", env, authorization())
+    plan = gpu.plan_compute("image.generate", env, authorization(), job_id="gpu-job-1")
     assert plan.selected_device == "cpu"
     assert plan.status == "GPU_UNAVAILABLE"
 
@@ -87,7 +87,7 @@ def test_missing_quota_or_verification_falls_back_to_cpu():
 def test_exhausted_free_quota_falls_back_to_cpu():
     env = verified_env()
     env["MINA_GPU_FREE_QUOTA_REMAINING_SECONDS"] = "0"
-    plan = gpu.plan_compute("image.generate", env, authorization())
+    plan = gpu.plan_compute("image.generate", env, authorization(), job_id="gpu-job-1")
     assert plan.selected_device == "cpu"
     assert plan.status == "GPU_QUOTA_EXHAUSTED"
 
@@ -100,20 +100,29 @@ def test_factory_approval_record_is_required():
 
 def test_missing_factory_approval_falls_back_to_cpu():
     payload = authorization(factory_approved=False, factory_decision_ref="")
-    plan = gpu.plan_compute("image.generate", verified_env(), payload)
+    plan = gpu.plan_compute("image.generate", verified_env(), payload, job_id="gpu-job-1")
     assert plan.selected_device == "cpu"
     assert plan.status == "GPU_NOT_APPROVED"
 
 
 def test_missing_production_need_falls_back_to_cpu():
     payload = authorization(production_required=False, production_request_ref="")
-    plan = gpu.plan_compute("image.generate", verified_env(), payload)
+    plan = gpu.plan_compute("image.generate", verified_env(), payload, job_id="gpu-job-1")
     assert plan.selected_device == "cpu"
     assert plan.status == "GPU_NOT_REQUIRED"
 
 
-def test_task_mismatch_in_factory_record_fails_closed():
-    plan = gpu.plan_compute("video.generate", verified_env(), authorization())
+def test_job_or_task_mismatch_in_factory_record_fails_closed():
+    plan = gpu.plan_compute("video.generate", verified_env(), authorization(), job_id="gpu-job-1")
+    assert plan.selected_device == "cpu"
+    assert plan.status == "GPU_AUTH_SCOPE_MISMATCH"
+    plan = gpu.plan_compute("image.generate", verified_env(), authorization(), job_id="different-job")
+    assert plan.selected_device == "cpu"
+    assert plan.status == "GPU_AUTH_SCOPE_MISMATCH"
+
+
+def test_missing_job_id_fails_closed():
+    plan = gpu.plan_compute("image.generate", verified_env(), authorization())
     assert plan.selected_device == "cpu"
     assert plan.status == "GPU_AUTH_SCOPE_MISMATCH"
 
@@ -125,13 +134,13 @@ def test_paid_or_malformed_authorization_fails_closed():
         authorization(provider="unexpected"),
         authorization(schema="external-video/v1"),
     ):
-        plan = gpu.plan_compute("image.generate", verified_env(), changed)
+        plan = gpu.plan_compute("image.generate", verified_env(), changed, job_id="gpu-job-1")
         assert plan.selected_device == "cpu"
         assert plan.status == "SAFE_HOLD"
 
 
 def test_valid_factory_and_production_decision_still_cannot_dispatch_without_adapter():
-    plan = gpu.plan_compute("image.generate", verified_env(), authorization())
+    plan = gpu.plan_compute("image.generate", verified_env(), authorization(), job_id="gpu-job-1")
     assert plan.selected_device == "cpu"
     assert plan.status == "GPU_ADAPTER_NOT_IMPLEMENTED"
 
